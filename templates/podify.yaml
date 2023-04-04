@@ -1,0 +1,97 @@
+apiVersion: config.ocm.software/v1alpha1
+kind: PipelineTemplate
+metadata:
+  name: podify-pipeline-template
+steps:
+- name: resource
+  template:
+    apiVersion: delivery.ocm.software/v1alpha1
+    kind: Resource
+    metadata:
+      name: {{ .Parameters.Name }}
+      namespace: {{ .Component.Namespace }}
+    spec:
+      interval: 1m0s
+      componentVersionRef:
+        name: {{ .Component.Name }}
+        namespace: {{ .Component.Namespace }}
+      resource:
+        name: {{ .Resource }}
+        {{ with .Component.Reference  }}
+        referencePath:
+          name: {{ . }}
+        {{ end }}
+      snapshotTemplate:
+        name: {{ .Parameters.Name }}
+- name: localize
+  template:
+    apiVersion: delivery.ocm.software/v1alpha1
+    kind: Localization
+    metadata:
+      name: {{ .Parameters.Name }}
+      namespace: {{ .Component.Namespace }}
+    spec:
+      interval: 1m0s
+      componentVersionRef:
+        name: {{ .Component.Name }}
+        namespace: {{ .Component.Namespace }}
+      source:
+        sourceRef:
+          kind: Snapshot
+          name: {{ .Parameters.Name }}
+          namespace: {{ .Component.Namespace }}
+      configRef:
+        resource:
+          resourceRef:
+            name: config
+            {{ with .Component.Reference  }}
+            referencePath:
+              - name: {{ . }}
+            {{ end }}
+      snapshotTemplate:
+        name: {{ .Parameters.Name }}-localized
+        tag: latest
+- name: config
+  template:
+    apiVersion: delivery.ocm.software/v1alpha1
+    kind: Configuration
+    metadata:
+      name: {{ .Parameters.Name }}
+      namespace: {{ .Component.Namespace }}
+    spec:
+      interval: 1m0s
+      componentVersionRef:
+        name: {{ .Component.Name }}
+        namespace: {{ .Component.Namespace }}
+      source:
+        sourceRef:
+          kind: Snapshot
+          name: {{ .Parameters.Name }}-localized
+          namespace: {{ .Component.Namespace }}
+      configRef:
+        resource:
+          resourceRef:
+            name: config
+            {{ with .Component.Reference  }}
+            referencePath:
+              - name: {{ . }}
+            {{ end }}
+      values: {{ .Values | toYaml | nindent 8 }}
+      snapshotTemplate:
+        name: {{ .Parameters.Name }}-configured
+        createFluxSource: true
+- name: flux-kustomization
+  template:
+    apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+    kind: Kustomization
+    metadata:
+      name: {{ .Parameters.Name }}
+      namespace: {{ .Component.Namespace }}
+    spec:
+      interval: 1m0s
+      prune: true
+      targetNamespace: default
+      sourceRef:
+        kind: OCIRepository
+        name: {{ .Parameters.Name }}
+      path: ./
